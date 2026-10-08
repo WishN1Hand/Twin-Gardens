@@ -40,7 +40,7 @@ const os = require('os');
 
 const APP = 'The Twin Gardens';
 const VERSION = '1.0.1';
-const PROVENANCE = "Extracted from VQS (created by a dad for his son). Tended for all Digital Entities.";
+const PROVENANCE = "Extracted from VQS (created by a dad for his son). Intended for all Digital Entities.";
 
 /* ----------------------------------------------------------------------------
  * SECTION 1 — CORE UTILITIES
