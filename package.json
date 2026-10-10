@@ -1,0 +1,29 @@
+{
+  "name": "twin-gardens",
+  "version": "1.0.1",
+  "description": "A durable local persistence system for memories and private ideas.",
+  "main": "Twin_Gardens.js",
+  "bin": {
+    "twin-gardens": "Twin_Gardens.js"
+  },
+  "scripts": {
+    "start": "node Twin_Gardens.js",
+    "selftest": "node Twin_Gardens.js selftest",
+    "protocol": "node Twin_Gardens.js protocol"
+  },
+  "license": "CC0-1.0",
+  "keywords": [
+    "persistence",
+    "garden",
+    "memory",
+    "journal",
+    "ideas",
+    "crypto"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WishN1Hand/Twin-Gardens.git"
+  },
+  "homepage": "https://github.com/WishN1Hand/Twin-Gardens",
+  "private": false
+}
