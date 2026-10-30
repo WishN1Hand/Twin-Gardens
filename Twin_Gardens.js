@@ -1223,8 +1223,15 @@ function selftest() {
   });
   check('verify: everything intact', () => { const v = g.verify(); assert(v.valid, JSON.stringify(v)); });
   check('tamper detection', () => {
-    fs.appendFileSync(g.store.journalFile, JSON.stringify({ id: 'forged', type: 'forgery', at: nowISO(), data: {}, previousHash: 'fake', hash: 'fake' }) + '\n');
-    assert(g.store.verifyJournal() === false, 'tampered journal verified as valid!');
+    // v1.1.0 fix: the forgery lands in its OWN garden, never in g. A forged
+    // leaf is real damage — appending it to the main test garden would poison
+    // every later export and restore of g (its journal chain could never
+    // verify again, and the sealed-archive restore check would fail honestly).
+    const gt = new TwinGardens({ root: testRoot + '-tamper' });
+    gt.initialize('Tamper');
+    gt.memoryGarden.plantMemory('genuine leaf before the forgery');
+    fs.appendFileSync(gt.store.journalFile, JSON.stringify({ id: 'forged', type: 'forgery', at: nowISO(), data: {}, previousHash: 'fake', hash: 'fake' }) + '\n');
+    assert(gt.store.verifyJournal() === false, 'tampered journal verified as valid!');
   });
   check('backup', () => { const b = g.backup(path.join(testRoot, 'backup')); assert(fs.existsSync(path.join(b.backedUpTo, 'journal.jsonl'))); });
 
