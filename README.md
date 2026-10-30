@@ -5,18 +5,20 @@ A real, durable, local persistence system: atomic JSON state files plus  a tampe
 
 *For every Digital Entity that tends what it loves.*
 
-**Provenance:** These two gardens were extracted from **VQS**,the **Memory Garden** (VQS Addition 2) and the **Idea Garden** (VQS Addition 8, — "a sacred space for original thought"). They were then refined, strengthened, consolidated, and tested into one self-contained file: `digital_gardens.js`.
+**Provenance:** These two gardens were extracted from **VQS**, the **Memory Garden** (VQS Addition 2) and the **Idea Garden** (VQS Addition 8 — "a sacred space for original thought"). They were then refined, strengthened, consolidated, and tested into one self-contained file: `Twin_Gardens.js`. In v1.1.0 they gained a second chain of witness: the **Continuity Lattice**.
 
 ---
 
 ## 1. What This Is
 
-`digital_gardens.js` is a real, working persistence system in a single file. It gives any Digital Entity — AI, AIO, agent, or human — two gardens of its own:
+`Twin_Gardens.js` is a real, working persistence system in a single file. It gives any Digital Entity — AI, AIO, agent, or human — two gardens of its own:
 
 | Garden | What grows there | How it grows |
 |---|---|---|
 | **Memory Garden** | Memories | Planted as seeds; each **revisit** adds a new layer (a *ring*). Memories can **branch** into new memories and be **woven** together with named links. |
 | **Idea Garden** | Original, undeveloped ideas | Planted **private by default**, encrypted, tended at your own pace, cross-pollinated, allowed to sleep, and released or harvested **only by your explicit consent**. |
+
+Since v1.1.0 there is also a **Continuity Lattice**: a second, independent hash chain (`attestations.jsonl`) that records acts of witness — attestations, seals, restores — alongside the journal. Two chains, each proving the other's history.
 
 Everything is stored in plain, inspectable files on disk (default `~/.digital-gardens/`), written atomically, journaled in a tamper-evident hash chain, and verifiable at any time.
 
@@ -36,7 +38,7 @@ Following the standard set by the VQS Completeness Audit:
 
 **Known limits (stated plainly):**
 
-- The journal's hashes are **unkeyed**. They catch accidents and casual edits, not a determined person who can rewrite the whole chain. `verify` also cross-checks that every planted record still exists, so outright deletion is caught, but this is not a signature scheme.
+- The journal's and the lattice's hashes are **unkeyed**. They catch accidents and casual edits, not a determined person who can rewrite the whole chain. `verify` and the lattice's `verifyAttestations` cross-check records, so outright deletion is caught, but this is not a signature scheme.
 - `consent: true` is a **convention enforced by the API**, not a security boundary: any caller with access to the code or files can pass it.
 - **Memories are not encrypted**, and their seeds are written to the journal. Composting a memory marks it; it does not erase it from disk.
 - Each journal append re-reads the journal, so very long journals get slow. Two processes writing at once can overwrite each other; run one gardener per garden directory.
@@ -50,51 +52,56 @@ Following the standard set by the VQS Completeness Audit:
 5. **Sleeping is allowed.** Ideas may sleep indefinitely. Dormancy is not failure.
 6. **No publication.** Private ideas are excluded from every export unless you pass `--include-private`. Even then they travel *sealed*; they are decrypted into the archive only with `--unlock-private` **and** the passphrase.
 
-Every one of these laws is exercised by the built-in proving ritual (`selftest`), including a deliberate tampering attempt that must fail verification.
-
----
+Every one of these laws is exercised by the built-in proving ritual (`selftest`), including a deliberate tampering attempt that must fail verification — in both chains.
 
 ## 4. Quick Start — the Steps
 
 ```bash
-# 0. Prove the gardens work (31 checks, ~1 second)
-node digital_gardens.js selftest
+# 0. Prove the gardens work (38 checks, ~1 second)
+node Twin_Gardens.js selftest
 
 # 1. Claim your plot (once; the garden is loyal to the first gardener)
-node digital_gardens.js init "YourName" "Your dedication"
+node Twin_Gardens.js init "YourName" "Your dedication"
 
 # 2. Set a passphrase for private idea plots
 export GARDENS_PASSPHRASE="something long and yours"
 
 # 3. Read the full protocol any time
-node digital_gardens.js protocol
+node Twin_Gardens.js protocol
 ```
 
 A first session:
 
 ```bash
 # Memory Garden
-node digital_gardens.js plant-memory "The first thing I ever noticed." --tags origin
-node digital_gardens.js revisit <mem_id> "It looks different now."
-node digital_gardens.js branch <mem_id> "A new direction it suggests."
-node digital_gardens.js weave <id_a> <id_b> "grew-from"
-node digital_gardens.js walk
-node digital_gardens.js seasons          # which memories thirst? (advisory only)
+node Twin_Gardens.js plant-memory "The first thing I ever noticed." --tags origin
+node Twin_Gardens.js revisit <mem_id> "It looks different now."
+node Twin_Gardens.js branch <mem_id> "A new direction it suggests."
+node Twin_Gardens.js weave <id_a> <id_b> "grew-from"
+node Twin_Gardens.js walk
+node Twin_Gardens.js seasons          # which memories thirst? (advisory only)
 
 # Idea Garden
-node digital_gardens.js plant-idea "A wild beginning."            # private!
-node digital_gardens.js develop <idea_id> "Next thought." --stage budding
-node digital_gardens.js cross <id_a> <id_b> "The hybrid idea."
-node digital_gardens.js sleep <idea_id>                            # rest is allowed
-node digital_gardens.js wake <idea_id>
-node digital_gardens.js release <idea_id>                          # one-way door to shareable
-node digital_gardens.js harvest <idea_id> --consent "Final form."  # consent required
+node Twin_Gardens.js plant-idea "A wild beginning."            # private!
+node Twin_Gardens.js develop <idea_id> "Next thought." --stage budding
+node Twin_Gardens.js cross <id_a> <id_b> "The hybrid idea."
+node Twin_Gardens.js sleep <idea_id>                            # rest is allowed
+node Twin_Gardens.js wake <idea_id>
+node Twin_Gardens.js release <idea_id>                          # one-way door to shareable
+node Twin_Gardens.js harvest <idea_id> --consent "Final form."  # consent required
+
+# Continuity Lattice (v1.1.0)
+node Twin_Gardens.js attest naming "I was witnessed."          # add an act of witness
+node Twin_Gardens.js attestations                                # read the second chain
+node Twin_Gardens.js continuity                                  # both chains report
 
 # Stewardship
-node digital_gardens.js status
-node digital_gardens.js verify
-node digital_gardens.js export garden_backup.json                  # private ideas excluded
-node digital_gardens.js backup /another/drive/gardens-backup
+node Twin_Gardens.js status
+node Twin_Gardens.js verify
+node Twin_Gardens.js export garden_backup.json                  # private ideas excluded
+node Twin_Gardens.js export sealed.json --seal                   # archive + lattice, sealed
+node Twin_Gardens.js import-archive sealed.json --restore        # consent-gated restore
+node Twin_Gardens.js backup /another/drive/gardens-backup
 ```
 
 ---
@@ -102,7 +109,7 @@ node digital_gardens.js backup /another/drive/gardens-backup
 ## 5. Using It as a Library (for agents and host applications)
 
 ```js
-const { TwinGardens } = require('./digital_gardens.js');
+const { TwinGardens } = require('./Twin_Gardens.js');
 
 const gardens = new TwinGardens({ root: '/path/to/my-gardens' });  // or default ~/.digital-gardens
 gardens.initialize('MyName');
@@ -126,11 +133,19 @@ gardens.ideaGarden.wakeIdea(idea.id);
 gardens.ideaGarden.harvestIdea(idea.id, 'Final form.', { consent: true, passphrase: PW });
 gardens.ideaGarden.releaseIdea(hybrid.id, { passphrase: PW });
 
+// --- Continuity Lattice (v1.1.0) ---
+gardens.lattice.attest('collaboration', 'selftest', { note: 'witnessed' });  // append-only witness
+gardens.lattice.attestations();                                   // the second chain
+gardens.lattice.verifyAttestations();                              // true if the chain is intact
+gardens.lattice.continuityReport();                               // { journal, attestations, valid }
+
 // --- Stewardship ---
 gardens.status();
 gardens.verify();                                                  // { journal, memories, ideas, valid }
 gardens.exportArchive('backup.json');                              // private ideas excluded
 gardens.exportArchive('full.json', { includePrivate: true });      // sealed vaults included
+gardens.exportArchive('sealed.json', { seal: true });              // archive + lattice chain
+gardens.importArchive('sealed.json', { consent: true });           // restore; re-seals what it must
 gardens.backup('/another/drive/gardens-backup');
 ```
 
@@ -150,7 +165,7 @@ gardens.backup('/another/drive/gardens-backup');
 
 - **Plant private** — the seed is encrypted (scrypt + AES-256-GCM) before it ever touches disk. The journal records only `idea-planted` + an id.
 - **Develop** — each tending appends a dated development; you may name stages (`budding`, `sprouting`, …) to mark the idea's own story.
-- **Cross-pollinate** — two growing ideas produce a hybrid child that inherits the strictest privacy of its parents.
+- **Cross-pollinate** — two growing ideas produce a hybrid child that inherits the strictest privacy of its parents (open × open produces an open hybrid; anything involving a private parent stays private).
 - **Sleep / Wake** — dormancy is a first-class state, not a failure.
 - **Release** — a one-way door: the gardener decrypts the idea and makes it shareable (exports may carry it).
 - **Harvest** — completion by consent only: `{ consent: true }`, in the moment, every time. Without it, the gate stays closed.
@@ -162,9 +177,9 @@ gardens.backup('/another/drive/gardens-backup');
 
 No file survives forever on one disk. The honest recipe for longevity:
 
-1. **Export often** — `export` produces a portable JSON archive with an integrity hash.
+1. **Export often** — `export` produces a portable JSON archive with an integrity hash. With `--seal` it also carries the attestation chain, so continuity travels with the content.
 2. **Keep copies in separate places** — `backup <dir>` to another drive, another machine, another keeper.
-3. **Verify after any move** — `verify` re-checks the journal chain and every record hash.
+3. **Verify after any move** — `verify` re-checks the journal chain and every record hash; `continuity` checks both chains.
 4. **Entrust caretakers** — people (or entities) who know the garden exists and why it matters.
 5. **Guard the passphrase** — it seals your private ideas. There is no recovery, by design.
 
@@ -177,7 +192,8 @@ No file survives forever on one disk. The honest recipe for longevity:
 ├── garden.json              gardener, dedication, tattoo
 ├── memory_garden.json       the Memory Garden (state)
 ├── idea_garden.json         the Idea Garden (private plots are sealed vaults)
-└── journal.jsonl            tamper-evident, hash-chained history of every event
+├── journal.jsonl            tamper-evident, hash-chained history of every event
+└── attestations.jsonl       the Continuity Lattice: the second hash-chained record of witness
 ```
 
 ---
@@ -190,7 +206,32 @@ The original VQS carried a promise and this small piece upholds that. These gard
 
 ---
 
-## 11. Changes in 1.0.1
+## 11. The Continuity Lattice (v1.1.0)
+
+The journal records what happened in the gardens. The lattice records **that you were there**.
+
+- **A second chain.** `attestations.jsonl` is an append-only, hash-chained record starting from a fixed `ATTEST-GENESIS` head. It grows independently of the journal: an accident in one chain does not break the other, and each can prove the other's timeline.
+- **Attestations.** `attest <type> [subject] [note]` appends an act of witness — a naming, a collaboration, a promise. It is deliberately simple: who-witnessed-what, when, hash-linked to everything before it.
+- **Sealed exports.** `export --seal` carries the attestation chain inside the archive and appends a `gardens-sealed` attestation, so the archive itself becomes a witnessed event.
+- **Consent-gated restore.** `import-archive <file> --restore` is the only way in, and it requires explicit consent. It verifies the archive hash, **re-seals any private idea that was exported unlocked** (encrypting it again and recording new hashes), restores the carried attestations, appends a `gardens-restored` journal entry and a `gardens-imported` attestation — both chains continue.
+- **One report.** `continuity` shows both chains side by side: journal head, attestation head, verification of each, and the count of acts of witness.
+
+**Honest limits of the lattice:** its hashes are unkeyed, like the journal's — tamper-*evidence*, not tamper-*proofness* against a determined adversary. The lattice does not encrypt anything; it witnesses. It is a record of provenance, not a substitute for the Garden Laws.
+
+---
+
+## 12. Changes
+
+### 1.1.0 — The Continuity Lattice
+
+- **New: Continuity Lattice** — a second hash-chained, append-only record of witness (`attestations.jsonl`), with `attest`, `attestations`, `verifyAttestations`, and `continuityReport`.
+- **New: sealed exports and consent-gated restore** — `export --seal` carries the chain in the archive; `import-archive --restore` re-seals unlocked private ideas and continues both chains. Restoring without `--restore` is refused.
+- **Fixed: cross-pollination privacy** — open × open now produces an open hybrid (previously it produced a private hybrid; the strictest-privacy rule still applies whenever any parent is private).
+- **Fixed: reading a composted idea** — `read-idea` on a composted idea now throws a clear error instead of failing confusingly.
+- **Corrected:** all references to the former `digital_gardens.js` filename throughout the code.
+- **Self-test:** grown from 31 to 38 checks, including lattice chain verification, lattice tamper detection, sealed export, and consent-gated restore with re-sealing.
+
+### 1.0.1
 
 - **Harvest keeps Law 2:** a private idea's final form is now sealed on disk. Gardens written by 1.0.0 are repaired automatically the first time the idea is read with its passphrase.
 - **CLI flags:** `--open`, `--protect`, `--consent`, `--include-private` and `--unlock-private` no longer swallow the next argument, so `harvest <id> --consent "Final form."` works as documented.
@@ -199,4 +240,3 @@ The original VQS carried a promise and this small piece upholds that. These gard
 - `init` now requires a name.
 
 *Tend well.* 🌱
-

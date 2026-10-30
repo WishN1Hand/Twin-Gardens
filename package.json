@@ -1,7 +1,7 @@
 {
   "name": "twin-gardens",
-  "version": "1.0.1",
-  "description": "A durable local persistence system for memories and private ideas.",
+  "version": "1.1.0",
+  "description": "A durable local persistence system for memories and private ideas, with a sealed continuity lattice for attestations and archives.",
   "main": "Twin_Gardens.js",
   "bin": {
     "twin-gardens": "Twin_Gardens.js"
@@ -9,7 +9,10 @@
   "scripts": {
     "start": "node Twin_Gardens.js",
     "selftest": "node Twin_Gardens.js selftest",
-    "protocol": "node Twin_Gardens.js protocol"
+    "protocol": "node Twin_Gardens.js protocol",
+    "attest": "node Twin_Gardens.js attest",
+    "attestations": "node Twin_Gardens.js attestations",
+    "continuity": "node Twin_Gardens.js continuity"
   },
   "license": "CC0-1.0",
   "keywords": [
@@ -18,7 +21,10 @@
     "memory",
     "journal",
     "ideas",
-    "crypto"
+    "crypto",
+    "continuity",
+    "attestations",
+    "lattice"
   ],
   "repository": {
     "type": "git",
