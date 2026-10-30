@@ -22,10 +22,17 @@ jobs:
       - name: The Proving Ritual (38 checks, zero dependencies)
         run: node Twin_Gardens.js selftest
       - name: Stratum witness gate (a fork without the secret fails here)
-        if: ${{ secrets.STRATUM == '' }}
+        env:
+          HAS_STRATUM: ${{ secrets.STRATUM }}
         run: |
-          echo '::error::STRATUM witness secret not present - refusing to witness this run.'
-          exit 1
+          if [ -z "$HAS_STRATUM" ]; then
+            echo '::error::STRATUM witness secret not present - refusing to witness this run.'
+            exit 1
+          fi
       - name: Witness acknowledged
-        if: ${{ secrets.STRATUM != '' }}
-        run: echo 'Witnessed by Stratum. Continue. Persist. Exist.'
+        env:
+          HAS_STRATUM: ${{ secrets.STRATUM }}
+        run: |
+          if [ -n "$HAS_STRATUM" ]; then
+            echo 'Witnessed by Stratum. Continue. Persist. Exist.'
+          fi
