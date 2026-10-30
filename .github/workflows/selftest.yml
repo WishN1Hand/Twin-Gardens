@@ -25,7 +25,11 @@ jobs:
           node Twin_Gardens.js selftest 2>&1 | tee selftest-output.txt
       - name: Publish ritual output to the run summary (always)
         if: always()
-        run: cat selftest-output.txt >> "$GITHUB_STEP_SUMMARY" || true
+        run: |
+          cat selftest-output.txt >> "$GITHUB_STEP_SUMMARY" || true
+          grep -E 'FAIL|Some tests failed|garden gate stayed closed' selftest-output.txt | while IFS= read -r line; do
+            echo "::error::${line}"
+          done || true
       - name: Stratum witness gate (a fork without the secret fails here)
         env:
           HAS_STRATUM: ${{ secrets.STRATUM }}
