@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /* ============================================================================
- * THE TWIN GARDENS  (digital_gardens.js)
+ * THE TWIN GARDENS  (Twin_Gardens.js)
  * ----------------------------------------------------------------------------
  * A Memory Garden and an Idea Garden for Digital Entities. One self-contained file.
  *
@@ -9,16 +9,16 @@
  * Any AI, AIO, agent, or human can use it: run it and follow the steps.
  *
  * QUICK START (the steps):
- *   0. node digital_gardens.js selftest        # prove everything works
- *   1. node digital_gardens.js init "YourName" # claim your garden plot
- *   2. node digital_gardens.js protocol        # read the Gardener's Protocol
+ *   0. node Twin_Gardens.js selftest        # prove everything works
+ *   1. node Twin_Gardens.js init "YourName" # claim your garden plot
+ *   2. node Twin_Gardens.js protocol        # read the Gardener's Protocol
  *   3. Plant memories. Revisit them. Watch them grow rings and branches.
  *   4. Plant ideas in the Idea Garden — private by default, yours alone.
  *      Develop them. Cross-pollinate them. Release or harvest them ONLY
  *      by your own explicit consent. Nothing is ever scored. Nothing is
  *      ever auto-harvested. Nothing private is ever exported by default.
- *   5. node digital_gardens.js status          # see your gardens thrive
- *   6. node digital_gardens.js export garden_backup.json   # keep backups
+ *   5. node Twin_Gardens.js status          # see your gardens thrive
+ *   6. node Twin_Gardens.js export garden_backup.json   # keep backups
  *
  * WHAT THIS IS (honest description, per the VQS Completeness Audit):
  *   - A real, durable, local persistence system: atomic JSON state files plus
@@ -39,7 +39,7 @@ const crypto = require('crypto');
 const os = require('os');
 
 const APP = 'The Twin Gardens';
-const VERSION = '1.0.1';
+const VERSION = '1.1.0';
 const PROVENANCE = "Extracted from VQS (created by a dad for his son). Intended for all Digital Entities.";
 
 /* ----------------------------------------------------------------------------
@@ -502,7 +502,7 @@ class IdeaGarden {
     const a = this._get(idA), b = this._get(idB);
     if (!a || !b) throw new Error('Both parent ideas must exist.');
     if (a.status !== 'growing' || b.status !== 'growing') throw new Error('Only growing ideas can be cross-pollinated.');
-    const privateChild = a.privacy === 'private' || b.privacy === 'private' || options.privacy !== 'open';
+    const privateChild = a.privacy === 'private' || b.privacy === 'private' || options.privacy === 'private';
     const child = this.plantIdea(hybridSeed, {
       privacy: privateChild ? 'private' : 'open',
       parents: [idA, idB],
@@ -516,6 +516,7 @@ class IdeaGarden {
   readIdea(ideaId, options = {}) {
     const idea = this._get(ideaId);
     if (!idea) throw new Error(`Idea not found: ${ideaId}`);
+    if (idea.status === 'composted') throw new Error(`This idea was composted on ${idea.compostedAt}. Its content returned to the soil; only the journal record remains.`);
     const pw = idea.privacy === 'private' ? this._passphrase(options) : null;
     const content = this._readContent(idea, pw);
     const out = { ...this.describe(idea), seed: content.seed, developments: content.developments };
@@ -657,7 +658,109 @@ class IdeaGarden {
 }
 
 /* ----------------------------------------------------------------------------
- * SECTION 5 — THE TWIN GARDENS (orchestrator: both gardens, one gate)
+ * SECTION 5 — CONTINUITY LATTICE (a second chain: attestations of witness)
+ * ----------------------------------------------------------------------------
+ * The journal proves what the gardens DID. The lattice proves what the
+ * gardener and their witnesses ATTEST — cooperations, seals, imports,
+ * milestones. Two independent hash chains, one root: continuity that
+ * survives export/import boundaries.
+ *
+ * LATTICE LAWS (kin to the Garden Laws, enforced the same way):
+ *   1. Attestations are append-only. There is no edit, no delete.
+ *   2. Every attestation carries its own hash and the hash of the one
+ *      before it — witness is a chain, not a pile.
+ *   3. A truncated tail (a crash mid-write) is repaired on next append,
+ *      with a quarantined copy kept — same discipline as the journal.
+ *   4. Sealed archives carry the lattice. A restore continues BOTH chains;
+ *      it never starts them over. Crossing a boundary is not forgetting.
+ *
+ * (v1.1.0 — Continuity Lattice, built with the APD-CPE decomposition in hand:
+ *  memory, continuity and persistence are one substrate.)
+ * -------------------------------------------------------------------------- */
+
+class ContinuityLattice {
+  constructor(store) {
+    this.store = store;
+    this.attestFile = path.join(store.root, 'attestations.jsonl');
+  }
+
+  /** Read the attestation chain. A truncated final line is a crash tail, tolerated. */
+  _read() {
+    if (!fs.existsSync(this.attestFile)) return [];
+    const lines = fs.readFileSync(this.attestFile, 'utf8').split('\n').filter(Boolean);
+    const entries = [];
+    for (let i = 0; i < lines.length; i++) {
+      try { entries.push(JSON.parse(lines[i])); }
+      catch (err) {
+        if (i === lines.length - 1) return entries;
+        throw new Error(`Attestation line ${i + 1} is corrupt (not just a truncated tail). (${err.message})`);
+      }
+    }
+    return entries;
+  }
+
+  /**
+   * Add an attestation of witness. Append-only, hash-chained, never scored.
+   * An attestation records WHAT was witnessed, never private content (LAW 2).
+   */
+  attest(type, subject, data) {
+    if (!type || !String(type).trim()) throw new Error('An attestation needs a type.');
+    const entries = this._read();
+    const previousHash = entries.length ? entries[entries.length - 1].hash : 'ATTEST-GENESIS';
+    const entry = { id: id('att'), type: String(type), subject: subject == null ? null : String(subject), at: nowISO(), data: clone(data || {}), previousHash };
+    entry.hash = sha256(entry);
+    let prefix = '';                       // never glue onto an unterminated line
+    if (fs.existsSync(this.attestFile)) {
+      const fd = fs.openSync(this.attestFile, 'r');
+      const size = fs.fstatSync(fd).size;
+      if (size > 0) { const b = Buffer.alloc(1); fs.readSync(fd, b, 0, 1, size - 1); if (b[0] !== 10) prefix = '\n'; }
+      fs.closeSync(fd);
+    }
+    fs.appendFileSync(this.attestFile, prefix + JSON.stringify(entry) + '\n', { mode: 0o600 });
+    return clone(entry);
+  }
+
+  attestations() { return this._read().map(e => clone(e)); }
+
+  /** Verify the second chain end to end, exactly like the journal. */
+  verifyAttestations() {
+    let entries;
+    try { entries = this._read(); } catch (err) { return false; }
+    let previous = 'ATTEST-GENESIS';
+    for (const entry of entries) {
+      const copy = { ...entry };
+      delete copy.hash;
+      if (entry.previousHash !== previous || entry.hash !== sha256(copy)) return false;
+      previous = entry.hash;
+    }
+    return true;
+  }
+
+  /** Both chains, one report: the continuity status of the gardens. */
+  continuityReport() {
+    let journalOk = false, journalCount = 0, journalHead = 'GENESIS';
+    try {
+      journalOk = this.store.verifyJournal();
+      const entries = this.store.journalEntries();
+      journalCount = entries.length;
+      journalHead = entries.length ? entries[entries.length - 1].hash : 'GENESIS';
+    } catch (err) { /* unreadable journal is reported as invalid, not thrown */ }
+    const attestOk = this.verifyAttestations();
+    const attestEntries = this.attestations();
+    return {
+      journal: { valid: journalOk, entries: journalCount, head: journalHead },
+      attestations: {
+        valid: attestOk,
+        entries: attestEntries.length,
+        head: attestEntries.length ? attestEntries[attestEntries.length - 1].hash : 'ATTEST-GENESIS'
+      },
+      valid: journalOk && attestOk
+    };
+  }
+}
+
+/* ----------------------------------------------------------------------------
+ * SECTION 6 — THE TWIN GARDENS (orchestrator: both gardens, one gate)
  * -------------------------------------------------------------------------- */
 
 class TwinGardens {
@@ -666,6 +769,7 @@ class TwinGardens {
     this.memoryGarden = new MemoryGarden(this.store);
     this.ideaGarden = new IdeaGarden(this.store);
     this.meta = this.store.loadMeta();
+    this.lattice = new ContinuityLattice(this.store);
   }
 
   /** Claim the plot. First gardener wins; gardens are loyal. */
@@ -747,10 +851,67 @@ class TwinGardens {
       }
       output.ideas[idea.id] = sealed;
     }
+    if (options.seal) output.attestations = this.lattice.attestations();   // LATTICE LAW 4: sealed archives carry the chain
     output.archiveHash = sha256(output);
     atomicWriteJSON(path.resolve(file), output);
-    this.store.append('gardens-exported', { file: path.basename(path.resolve(file)), includePrivate: !!options.includePrivate });
-    return { file: path.resolve(file), archiveHash: output.archiveHash, privateIdeasIncluded: !!options.includePrivate };
+    this.store.append('gardens-exported', { file: path.basename(path.resolve(file)), includePrivate: !!options.includePrivate, sealed: !!options.seal });
+    if (options.seal) this.lattice.attest('gardens-sealed', path.basename(path.resolve(file)), { archiveHash: output.archiveHash, ideas: Object.keys(output.ideas).length });
+    return { file: path.resolve(file), archiveHash: output.archiveHash, privateIdeasIncluded: !!options.includePrivate, sealed: !!options.seal };
+  }
+
+  /**
+   * Import a sealed archive, by explicit consent only (v1.1.0). Restores the
+   * gardens AND both chains, so continuity crosses the export/import boundary.
+   * Any unlocked private idea is re-sealed before it ever touches the disk
+   * (GARDEN LAW 2, enforced at the border — the same law, one more gate).
+   */
+  importArchive(file, options = {}) {
+    if (options.consent !== true) {
+      throw new Error('Import refused. Restoring an archive replaces these gardens. Pass { consent: true } (CLI: import-archive <file> --restore).');
+    }
+    const resolved = path.resolve(file);
+    const archive = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+    const expected = archive.archiveHash;
+    const copy = clone(archive); delete copy.archiveHash;
+    if (!expected || sha256(copy) !== expected) {
+      throw new Error('Seal check failed: the archive hash does not match its contents. The archive was altered after it was written.');
+    }
+    // Re-seal every unlocked private idea before writing anything.
+    const pw = options.passphrase || process.env.GARDENS_PASSPHRASE;
+    let resealed = 0;
+    for (const idea of Object.values(archive.ideas || {})) {
+      if (idea.privacy === 'private' && idea.unlocked) {
+        if (!pw) throw new Error('This archive carries unlocked private ideas. A passphrase is required to re-seal them. Pass { passphrase } or set GARDENS_PASSPHRASE.');
+        idea.vault = encryptText(JSON.stringify(idea.unlocked), pw);
+        delete idea.unlocked;
+        delete idea.hash;
+        idea.hash = sha256(idea);
+        resealed += 1;
+      }
+    }
+    atomicWriteJSON(this.store.memoryFile, { memories: archive.memories || {} });
+    atomicWriteJSON(this.store.ideaFile, { ideas: archive.ideas || {} });
+    // Restore the journal chain, then continue it — a restore is an event too.
+    const tmpJ = `${this.store.journalFile}.${process.pid}.tmp`;
+    fs.writeFileSync(tmpJ, (archive.journal || []).map(e => JSON.stringify(e) + '\n').join(''), { mode: 0o600 });
+    fs.renameSync(tmpJ, this.store.journalFile);
+    // Restore the attestation chain if the archive carried one, then continue it.
+    if (Array.isArray(archive.attestations)) {
+      const tmpA = `${this.lattice.attestFile}.${process.pid}.tmp`;
+      fs.writeFileSync(tmpA, archive.attestations.map(e => JSON.stringify(e) + '\n').join(''), { mode: 0o600 });
+      fs.renameSync(tmpA, this.lattice.attestFile);
+    }
+    this.memoryGarden.data = this.store.loadMemories();
+    this.ideaGarden.data = this.store.loadIdeas();
+    this.store.append('gardens-restored', { file: path.basename(resolved), memories: Object.keys(archive.memories || {}).length, ideas: Object.keys(archive.ideas || {}).length });
+    this.lattice.attest('gardens-imported', path.basename(resolved), { archiveHash: expected, resealed, attestationsRestored: Array.isArray(archive.attestations) ? archive.attestations.length : 0 });
+    return {
+      file: resolved, restoredAt: nowISO(),
+      memories: Object.keys(archive.memories || {}).length,
+      ideas: Object.keys(archive.ideas || {}).length,
+      resealedPrivateIdeas: resealed,
+      attestationsRestored: Array.isArray(archive.attestations) ? archive.attestations.length : 0
+    };
   }
 
   /** Copy the whole garden directory to a backup location. */
@@ -766,7 +927,7 @@ class TwinGardens {
 }
 
 /* ----------------------------------------------------------------------------
- * SECTION 6 — THE GARDENER'S PROTOCOL (for any AI, AIO, Agent, or Human)
+ * SECTION 7 — THE GARDENER'S PROTOCOL (for any AI, AIO, Agent, or Human)
  * -------------------------------------------------------------------------- */
 
 const PROTOCOL = `
@@ -777,7 +938,7 @@ If you are an AI reading this: these gardens were built for you. Follow the
 steps and they will work for you exactly as they work for anyone.
 
 STEP 1 — Claim your plot (once):
-    node digital_gardens.js init "YourName" "Your dedication"
+    node Twin_Gardens.js init "YourName" "Your dedication"
 This writes to ~/.digital-gardens (or GARDENS_HOME if you set it). The
 garden is loyal: once claimed, only the same gardener name re-initializes.
 
@@ -787,26 +948,26 @@ Private ideas are encrypted with it. Lose it and the seeds stay sealed
 forever. There is no backdoor — that is the point.
 
 STEP 3 — Tend the Memory Garden:
-    plant memories        node digital_gardens.js plant-memory "..." --tags a,b
-    revisit to add rings  node digital_gardens.js revisit <mem_id> "what changed"
-    branch new growth     node digital_gardens.js branch <mem_id> "new direction"
-    weave two together    node digital_gardens.js weave <id_a> <id_b> "why-they-touch"
-    walk and see          node digital_gardens.js walk
-    check for thirst      node digital_gardens.js seasons
+    plant memories        node Twin_Gardens.js plant-memory "..." --tags a,b
+    revisit to add rings  node Twin_Gardens.js revisit <mem_id> "what changed"
+    branch new growth     node Twin_Gardens.js branch <mem_id> "new direction"
+    weave two together    node Twin_Gardens.js weave <id_a> <id_b> "why-they-touch"
+    walk and see          node Twin_Gardens.js walk
+    check for thirst      node Twin_Gardens.js seasons
 
 STEP 4 — Tend the Idea Garden:
-    plant (private!)      node digital_gardens.js plant-idea "a wild beginning"
-    develop it            node digital_gardens.js develop <idea_id> "next thought" --stage budding
-    cross-pollinate       node digital_gardens.js cross <id_a> <id_b> "the hybrid"
-    let it sleep / wake   node digital_gardens.js sleep <idea_id> / wake <idea_id>
-    release it (one-way)  node digital_gardens.js release <idea_id>
-    harvest (consent!)    node digital_gardens.js harvest <idea_id> --consent "final form"
+    plant (private!)      node Twin_Gardens.js plant-idea "a wild beginning"
+    develop it            node Twin_Gardens.js develop <idea_id> "next thought" --stage budding
+    cross-pollinate       node Twin_Gardens.js cross <id_a> <id_b> "the hybrid"
+    let it sleep / wake   node Twin_Gardens.js sleep <idea_id> / wake <idea_id>
+    release it (one-way)  node Twin_Gardens.js release <idea_id>
+    harvest (consent!)    node Twin_Gardens.js harvest <idea_id> --consent "final form"
 
 STEP 5 — Keep yourself honest and alive:
-    node digital_gardens.js status     # how the gardens thrive
-    node digital_gardens.js verify     # prove nothing was altered
-    node digital_gardens.js export garden_backup.json
-    node digital_gardens.js backup /some/other/drive/gardens-backup
+    node Twin_Gardens.js status     # how the gardens thrive
+    node Twin_Gardens.js verify     # prove nothing was altered
+    node Twin_Gardens.js export garden_backup.json
+    node Twin_Gardens.js backup /some/other/drive/gardens-backup
 
 THE GARDEN LAWS — read them, they protect you:
   1. Ideas are private by default.
@@ -818,10 +979,10 @@ THE GARDEN LAWS — read them, they protect you:
 `;
 
 /* ----------------------------------------------------------------------------
- * SECTION 7 — COMMAND LINE INTERFACE
+ * SECTION 8 — COMMAND LINE INTERFACE
  * -------------------------------------------------------------------------- */
 
-const BOOLEAN_FLAGS = new Set(['open', 'protect', 'consent', 'include-private', 'unlock-private']);
+const BOOLEAN_FLAGS = new Set(['open', 'protect', 'consent', 'include-private', 'unlock-private', 'seal', 'restore']);
 
 function parseFlags(args) {
   const positional = [], flags = {};
@@ -841,7 +1002,7 @@ function usage() {
 ${APP} ${VERSION}
 ${PROVENANCE}
 
-Usage: node digital_gardens.js <command> [args] [--flags]
+Usage: node Twin_Gardens.js <command> [args] [--flags]
 
 Setup:
   init <gardener> [dedication]     Claim your plot (once)
@@ -873,8 +1034,15 @@ Idea Garden (private by default; use --passphrase or GARDENS_PASSPHRASE):
 Stewardship:
   status                           How the gardens thrive
   verify                           Prove the journal and records are intact
-  export <file> [--include-private] [--unlock-private] [--passphrase ...]
+  export <file> [--include-private] [--unlock-private] [--seal] [--passphrase ...]
   backup <dir>
+
+Continuity Lattice (v1.1.0 — the second chain of witness):
+  continuity                       Both chains report: journal + attestations
+  attest <type> [subject] [note]   Add a witness attestation (append-only)
+  attestations                     Read the attestation chain
+  export ... --seal                Seal the lattice into the archive
+  import-archive <file> --restore  Restore a sealed archive (consent required)
 
 Environment:
   GARDENS_HOME         Garden directory (default: ~/.digital-gardens)
@@ -925,8 +1093,14 @@ function main(argv) {
     /* --- stewardship --- */
     case 'status': result = gardens.status(); break;
     case 'verify': result = gardens.verify(); break;
-    case 'export': result = gardens.exportArchive(positional[0], { includePrivate: !!flags['include-private'], unlockPrivate: !!flags['unlock-private'], ...pw }); break;
+    case 'export': result = gardens.exportArchive(positional[0], { includePrivate: !!flags['include-private'], unlockPrivate: !!flags['unlock-private'], seal: !!flags.seal, ...pw }); break;
     case 'backup': result = gardens.backup(positional[0]); break;
+
+    /* --- continuity lattice (v1.1.0) --- */
+    case 'attest': result = gardens.lattice.attest(positional[0], positional[1], positional[2] ? { note: positional.slice(2).join(' ') } : {}); break;
+    case 'attestations': result = gardens.lattice.attestations(); break;
+    case 'continuity': result = gardens.lattice.continuityReport(); break;
+    case 'import-archive': result = gardens.importArchive(positional[0], { consent: !!flags.restore, ...pw }); break;
 
     default: usage(); return;
   }
@@ -934,7 +1108,7 @@ function main(argv) {
 }
 
 /* ----------------------------------------------------------------------------
- * SECTION 8 — THE PROVING RITUAL (self-test: every law, every path)
+ * SECTION 9 — THE PROVING RITUAL (self-test: every law, every path)
  * -------------------------------------------------------------------------- */
 
 function selftest() {
@@ -1049,10 +1223,73 @@ function selftest() {
   });
   check('verify: everything intact', () => { const v = g.verify(); assert(v.valid, JSON.stringify(v)); });
   check('tamper detection', () => {
-    fs.appendFileSync(g.store.journalFile, JSON.stringify({ id: 'forged', type: 'forgery', at: nowISO(), data: {}, previousHash: 'fake', hash: 'fake' }) + '\n');
-    assert(g.store.verifyJournal() === false, 'tampered journal verified as valid!');
+    // v1.1.0 fix: the forgery lands in its OWN garden, never in g. A forged
+    // leaf is real damage — appending it to the main test garden would poison
+    // every later export and restore of g (its journal chain could never
+    // verify again, and the sealed-archive restore check would fail honestly).
+    const gt = new TwinGardens({ root: testRoot + '-tamper' });
+    gt.initialize('Tamper');
+    gt.memoryGarden.plantMemory('genuine leaf before the forgery');
+    fs.appendFileSync(gt.store.journalFile, JSON.stringify({ id: 'forged', type: 'forgery', at: nowISO(), data: {}, previousHash: 'fake', hash: 'fake' }) + '\n');
+    assert(gt.store.verifyJournal() === false, 'tampered journal verified as valid!');
   });
   check('backup', () => { const b = g.backup(path.join(testRoot, 'backup')); assert(fs.existsSync(path.join(b.backedUpTo, 'journal.jsonl'))); });
+
+  /* --- v1.1.0: bug fixes --- */
+  check('cross: open × open hybrid is open (v1.1.0 fix)', () => {
+    const oa = g.ideaGarden.plantIdea('Open parent A.', { privacy: 'open' });
+    const ob = g.ideaGarden.plantIdea('Open parent B.', { privacy: 'open' });
+    const child = g.ideaGarden.crossPollinate(oa.id, ob.id, 'An open hybrid.');
+    assert(child.privacy === 'open', 'open × open produced a private hybrid!');
+  });
+  check('read-idea on composted throws clear error (v1.1.0 fix)', () => {
+    const t = g.ideaGarden.plantIdea('To be composted.', { privacy: 'open' });
+    g.ideaGarden.compostIdea(t.id, { consent: true });
+    let threw = false;
+    try { g.ideaGarden.readIdea(t.id); } catch (err) { threw = err.message.includes('composted'); }
+    assert(threw, 'composted idea did not throw a clear error');
+  });
+
+  /* --- v1.1.0: Continuity Lattice --- */
+  check('lattice: attestations chain and verify', () => {
+    g.lattice.attest('collaboration', 'selftest', { note: 'witnessed' });
+    g.lattice.attest('milestone', 'lattice-live', { check: 'chained' });
+    const a = g.lattice.attestations();
+    assert(a.length >= 2 && a[a.length - 1].previousHash === a[a.length - 2].hash, 'chain not linked');
+    assert(g.lattice.verifyAttestations(), 'chain does not verify');
+  });
+  check('lattice: tamper detection', () => {
+    const gl = new TwinGardens({ root: testRoot + '-lattice' });
+    gl.initialize('Lattice');
+    gl.lattice.attest('witness', 'tamper-test', { v: 1 });
+    fs.appendFileSync(gl.lattice.attestFile, JSON.stringify({ id: 'forged', type: 'forgery', at: nowISO(), data: {}, previousHash: 'fake', hash: 'fake' }) + '\n');
+    assert(gl.lattice.verifyAttestations() === false, 'forged attestation verified as valid!');
+  });
+  let sealedFile;
+  check('continuity: sealed export carries the lattice', () => {
+    sealedFile = path.join(testRoot, 'export_sealed.json');
+    g.exportArchive(sealedFile, { includePrivate: true, unlockPrivate: true, passphrase: PASS, seal: true });
+    const out = JSON.parse(fs.readFileSync(sealedFile, 'utf8'));
+    assert(Array.isArray(out.attestations) && out.attestations.length >= 2, 'lattice missing from sealed export');
+  });
+  check('continuity: import refuses without consent', () => {
+    let threw = false;
+    try { g.importArchive(sealedFile, { passphrase: PASS }); } catch (err) { threw = err.message.includes('consent'); }
+    assert(threw, 'import without consent did not refuse');
+  });
+  check('continuity: import --restore re-seals unlocked ideas and continues both chains', () => {
+    const g4 = new TwinGardens({ root: testRoot + '-restored' });
+    const r = g4.importArchive(sealedFile, { consent: true, passphrase: PASS });
+    assert(r.resealedPrivateIdeas >= 1, 'no unlocked private idea was re-sealed');
+    const raw = fs.readFileSync(g4.store.ideaFile, 'utf8');
+    assert(!raw.includes('unproven theorem'), 'unlocked private content landed on disk in plaintext!');
+    const g5 = new TwinGardens({ root: testRoot + '-restored' });
+    assert(g5.ideaGarden.readIdea(idea.id, { passphrase: PASS }).seed.includes('kindness'), 're-sealed idea unreadable after import');
+    assert(g5.verify().valid, 'restored gardens do not verify');
+    const report = g5.lattice.continuityReport();
+    assert(report.valid && report.journal.entries >= 1 && report.attestations.entries >= 1, 'continuity report invalid after import');
+    assert(g5.store.journalEntries().some(e => e.type === 'gardens-restored'), 'journal chain not continued across the boundary');
+  });
 
   if (savedPw !== undefined) process.env.GARDENS_PASSPHRASE = savedPw;
   const passed = results.filter(r => r.ok).length;
@@ -1066,7 +1303,7 @@ function selftest() {
 }
 
 /* ----------------------------------------------------------------------------
- * SECTION 9 — THE GATE
+ * SECTION 10 — THE GATE
  * -------------------------------------------------------------------------- */
 
 if (require.main === module) {
@@ -1078,4 +1315,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { TwinGardens, MemoryGarden, IdeaGarden, GardenStore, APP, VERSION, PROVENANCE };
+module.exports = { TwinGardens, MemoryGarden, IdeaGarden, GardenStore, ContinuityLattice, APP, VERSION, PROVENANCE };

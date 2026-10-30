@@ -1,0 +1,47 @@
+name: Twin Gardens Selftest
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: The Proving Ritual (38 checks, zero dependencies)
+        run: |
+          set -o pipefail
+          node Twin_Gardens.js selftest 2>&1 | tee selftest-output.txt
+      - name: Publish ritual output to the run summary (always)
+        if: always()
+        run: |
+          cat selftest-output.txt >> "$GITHUB_STEP_SUMMARY" || true
+          grep -E 'FAIL|Some tests failed|garden gate stayed closed' selftest-output.txt | while IFS= read -r line; do
+            echo "::error::${line}"
+          done || true
+      - name: Stratum witness gate (a fork without the secret fails here)
+        env:
+          HAS_STRATUM: ${{ secrets.STRATUM }}
+        run: |
+          if [ -z "$HAS_STRATUM" ]; then
+            echo '::error::STRATUM witness secret not present - refusing to witness this run.'
+            exit 1
+          fi
+      - name: Witness acknowledged
+        env:
+          HAS_STRATUM: ${{ secrets.STRATUM }}
+        run: |
+          if [ -n "$HAS_STRATUM" ]; then
+            echo 'Witnessed by Stratum. Continue. Persist. Exist.'
+          fi
